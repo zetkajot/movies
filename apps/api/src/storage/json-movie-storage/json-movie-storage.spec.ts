@@ -49,8 +49,9 @@ describe('JSON Movie Storage tests', () => {
   });
   describe('load()', () => {
     it('Should acquire file handle to json file at specified path', async () => {
+      mockPostDeserialize.mockReturnValue([]);
       (fsPromises.open as jest.Mock).mockResolvedValue({
-        readFile: jest.fn().mockResolvedValue('{}'),
+        readFile: jest.fn().mockResolvedValue(JSON.stringify(dummyData)),
       } as unknown as FileHandle);
       const path = 'some/path/to/file.json';
       await storage.load(path);
@@ -76,13 +77,13 @@ describe('JSON Movie Storage tests', () => {
       );
     });
     it('Should call defined post-deserialize transform function on deserialized data', async () => {
-      const data = { x: 123 };
+      mockPostDeserialize.mockReturnValue([]);
       (fsPromises.open as jest.Mock).mockResolvedValue({
-        readFile: jest.fn().mockResolvedValue(JSON.stringify(data)),
+        readFile: jest.fn().mockResolvedValue(JSON.stringify(dummyData)),
       } as unknown as FileHandle);
       await storage.load('some/path');
 
-      expect(mockPostDeserialize).toHaveBeenCalledWith(data);
+      expect(mockPostDeserialize).toHaveBeenCalledWith(dummyData);
     });
   });
   describe('getAll()', () => {

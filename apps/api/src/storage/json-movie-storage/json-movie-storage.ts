@@ -22,6 +22,8 @@ import { InvalidFileContentsError } from './errors';
 export class JSONMovieStorage implements Storage<MovieRecord> {
   private genres: string[];
   private records: MovieRecord[];
+  private genresIndex: Map<string, MovieRecord[]>;
+
   public static readonly DEFAULT_PRE_SERIALIZE: MovieRecordPreSerializeTransformer =
     (records) => records;
   public static readonly DEFAULT_POST_DESERIALIZE: MovieRecordPostDeserializeTransformer =
@@ -55,6 +57,17 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
     }
     this.genres = parsedData.genres;
     this.records = this.postDeserialize(parsedData);
+
+    this.buildGenresIndex();
+  }
+
+  private buildGenresIndex() {
+    this.genresIndex = new Map(this.genres.map(genre => [genre, []]));
+    for (const record of this.records) {
+      for (const genre of record.genres) {
+        this.genresIndex.get(genre).push(record);
+      }
+    }
   }
 
   async getAll(): Promise<MovieRecord[]> {
@@ -111,14 +124,33 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
   async getByAnyOf(
     input: GetByAnyOfInput<MovieRecord>
   ): Promise<MovieRecord[]> {
-    const resultsWithMatchCount: [MovieRecord, number][] = [];
-    for (const record of this.records) {
-      const matchCount = this.getMatchCount(input, record);
-      if (matchCount > 0) {
-        resultsWithMatchCount.push([record, matchCount]);
+    let resultsWithMatchCount: [MovieRecord, number][];
+    if (Object.keys(input).length === 1 && Object.keys(input)[0] === 'genres') {
+      resultsWithMatchCount = this.getByAnyOfGenresOptimized(input.genres);
+    } else {
+      resultsWithMatchCount = [];
+      for (const record of this.records) {
+        const matchCount = this.getMatchCount(input, record);
+        if (matchCount > 0) {
+          resultsWithMatchCount.push([record, matchCount]);
+        }
       }
     }
     return resultsWithMatchCount.sort(([, a], [, b]) => b - a).map(([r]) => r);
+  }
+
+  /**
+   * Gets movie records with any of specified genres. Should perform better than generic behavior in `getByAnyOf` in avg case.
+   */
+  getByAnyOfGenresOptimized(genres: string[]): [MovieRecord, number][] {
+    const recordMatchCountMap: Map<MovieRecord, number> = new Map();
+    for (const genre of genres) {
+      this.genresIndex.get(genre).forEach(record => {
+        let currentMatchCount = recordMatchCountMap.get(record) ?? 0;
+        recordMatchCountMap.set(record, ++currentMatchCount);
+      });
+    }
+    return Array.from(recordMatchCountMap.entries());
   }
 
   private matchesAnyOf(
