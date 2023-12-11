@@ -23,6 +23,7 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
   private genres: string[];
   private records: MovieRecord[];
   private genresIndex: Map<string, MovieRecord[]>;
+  private runtimesIndex: [number, MovieRecord][];
 
   public static readonly DEFAULT_PRE_SERIALIZE: MovieRecordPreSerializeTransformer =
     (records) => records;
@@ -59,15 +60,20 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
     this.records = this.postDeserialize(parsedData);
 
     this.buildGenresIndex();
+    this.buildRuntimeIndex();
   }
 
   private buildGenresIndex() {
-    this.genresIndex = new Map(this.genres.map(genre => [genre, []]));
+    this.genresIndex = new Map(this.genres.map((genre) => [genre, []]));
     for (const record of this.records) {
       for (const genre of record.genres) {
         this.genresIndex.get(genre).push(record);
       }
     }
+  }
+
+  private buildRuntimeIndex() {
+    this.runtimesIndex = this.records.map((record) => [record.runtime, record]);
   }
 
   async getAll(): Promise<MovieRecord[]> {
@@ -101,12 +107,51 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
     input: GetByRangeInput<MovieRecord>
   ): Promise<MovieRecord[]> {
     const results: MovieRecord[] = [];
-    for (const record of this.records) {
+    let records: MovieRecord[];
+    if ('runtime' in input) {
+      records = this.getByRangeRuntimeOptimized(input.runtime);
+    } else {
+      records = this.records;
+    }
+    for (const record of records) {
       if (this.matchesRange(input, record)) {
         results.push(record);
       }
     }
     return results;
+  }
+
+  private getByRangeRuntimeOptimized([min, max]: [
+    min: number,
+    max: number
+  ]): MovieRecord[] {
+    let left = this.binsearchRuntimeIndex(min);
+    if (this.runtimesIndex[left][0] < min) {
+      left += 1;
+    }
+    let right = this.binsearchRuntimeIndex(max);
+    if (this.runtimesIndex[right][0] > max) {
+      right-=1;
+    }
+    return this.runtimesIndex
+      .slice(left, right + 1)
+      .map(([, record]) => record);
+  }
+
+  private binsearchRuntimeIndex(n: number): number {
+    let [left, right] = [0, this.runtimesIndex.length - 1];
+    let i: number;
+    while (left <= right) {
+      i = Math.floor((left + right) / 2);
+      if (this.runtimesIndex[i][0] === n) {
+        return i;
+      } else if (this.runtimesIndex[i][0] < n) {
+        left = i + 1;
+      } else {
+        right = i - 1;
+      }
+    }
+    return i;
   }
 
   private matchesRange(
@@ -145,24 +190,12 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
   getByAnyOfGenresOptimized(genres: string[]): [MovieRecord, number][] {
     const recordMatchCountMap: Map<MovieRecord, number> = new Map();
     for (const genre of genres) {
-      this.genresIndex.get(genre).forEach(record => {
+      this.genresIndex.get(genre).forEach((record) => {
         let currentMatchCount = recordMatchCountMap.get(record) ?? 0;
         recordMatchCountMap.set(record, ++currentMatchCount);
       });
     }
     return Array.from(recordMatchCountMap.entries());
-  }
-
-  private matchesAnyOf(
-    input: GetByAnyOfInput<MovieRecord>,
-    target: MovieRecord
-  ): boolean {
-    for (const [key, values] of Object.entries(input)) {
-      if (!(target[key] as string[]).some((v) => values.includes(v))) {
-        return false;
-      }
-    }
-    return true;
   }
 
   private getMatchCount(
@@ -185,9 +218,15 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
   ): Promise<MovieRecord[]> {
     const resultsWithMatchCount: [MovieRecord, number][] = [];
     for (const record of this.records) {
-      const matchCount = input[GetByInputVariants.ANY_OF] ? this.getMatchCount(input[GetByInputVariants.ANY_OF], record) : 1;
-      const matchesRange = input[GetByInputVariants.RANGE] ? this.matchesRange(input[GetByInputVariants.RANGE], record) : true;
-      const matchesExact = input[GetByInputVariants.EXACT] ? this.matchesExact(input[GetByInputVariants.EXACT], record) : true;
+      const matchCount = input[GetByInputVariants.ANY_OF]
+        ? this.getMatchCount(input[GetByInputVariants.ANY_OF], record)
+        : 1;
+      const matchesRange = input[GetByInputVariants.RANGE]
+        ? this.matchesRange(input[GetByInputVariants.RANGE], record)
+        : true;
+      const matchesExact = input[GetByInputVariants.EXACT]
+        ? this.matchesExact(input[GetByInputVariants.EXACT], record)
+        : true;
       if (matchCount > 0 && matchesRange && matchesExact) {
         resultsWithMatchCount.push([record, matchCount]);
       }
