@@ -83,7 +83,7 @@ describe('JSON Movie Storage tests', () => {
       } as unknown as FileHandle);
       await storage.load('some/path');
 
-      expect(mockPostDeserialize).toHaveBeenCalledWith(dummyData);
+      expect(mockPostDeserialize).toHaveBeenCalledWith(dummyData, storage);
     });
   });
   describe('getAll()', () => {

@@ -26,9 +26,15 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
   private runtimesIndex: [number, MovieRecord][];
 
   public static readonly DEFAULT_PRE_SERIALIZE: MovieRecordPreSerializeTransformer =
-    (records) => records;
+    (records, { genres }) => ({
+      movies: records,
+      genres,
+    });
   public static readonly DEFAULT_POST_DESERIALIZE: MovieRecordPostDeserializeTransformer =
-    (data) => data.movies;
+    (data, ctx) => {
+      ctx.genres = data.genres;
+      return data.movies;
+    };
 
   private readonly preSerialize: MovieRecordPreSerializeTransformer;
   private readonly postDeserialize: MovieRecordPreSerializeTransformer;
@@ -57,7 +63,7 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
       throw new InvalidFileContentsError(jsonFilePath, e);
     }
     this.genres = parsedData.genres;
-    this.records = this.postDeserialize(parsedData);
+    this.records = this.postDeserialize(parsedData, this);
 
     this.buildGenresIndex();
     this.buildRuntimeIndex();
@@ -131,7 +137,7 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
     }
     let right = this.binsearchRuntimeIndex(max);
     if (this.runtimesIndex[right][0] > max) {
-      right-=1;
+      right -= 1;
     }
     return this.runtimesIndex
       .slice(left, right + 1)
