@@ -86,6 +86,23 @@ describe('JSON Movie Storage tests', () => {
       expect(mockPostDeserialize).toHaveBeenCalledWith(dummyData, storage);
     });
   });
+  describe('getGenres()', () => {
+    beforeEach(async () => {
+      (fsPromises.open as jest.Mock).mockResolvedValue({
+        readFile: jest.fn().mockResolvedValue(JSON.stringify(dummyData)),
+      } as unknown as FileHandle);
+      mockPostDeserialize.mockImplementation(
+        JSONMovieStorage.DEFAULT_POST_DESERIALIZE
+      );
+      mockPreSerialize.mockImplementation(
+        JSONMovieStorage.DEFAULT_PRE_SERIALIZE
+      );
+      await storage.load('');
+    });
+    it('Should return all genres loaded from file', async () =>{
+      expect(storage.getGenres()).resolves.toEqual(dummyData.genres);
+    });
+  });
   describe('getAll()', () => {
     beforeEach(async () => {
       (fsPromises.open as jest.Mock).mockResolvedValue({

@@ -20,10 +20,10 @@ import { InvalidFileContentsError } from './errors';
  * Stores Movie records in memory backed up by JSON file
  */
 export class JSONMovieStorage implements Storage<MovieRecord> {
-  private genres: string[];
-  private records: MovieRecord[];
-  private genresIndex: Map<string, MovieRecord[]>;
-  private runtimesIndex: [number, MovieRecord][];
+  private genres!: string[];
+  private records!: MovieRecord[];
+  private genresIndex!: Map<string, MovieRecord[]>;
+  private runtimesIndex!: [number, MovieRecord][];
 
   public static readonly DEFAULT_PRE_SERIALIZE: MovieRecordPreSerializeTransformer =
     (records, { genres }) => ({
@@ -38,7 +38,7 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
 
   private readonly preSerialize: MovieRecordPreSerializeTransformer;
   private readonly postDeserialize: MovieRecordPreSerializeTransformer;
-  private fileHandle: FileHandle;
+  private fileHandle!: FileHandle;
 
   constructor(opts?: JSONMovieStorageOptions) {
     this.preSerialize =
@@ -51,7 +51,7 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
     try {
       this.fileHandle = await open(jsonFilePath, constants.O_RDWR);
     } catch (err) {
-      throw new UnableToOpenFileError(jsonFilePath, err);
+      throw new UnableToOpenFileError(jsonFilePath, err as Error);
     }
     let parsedData;
     try {
@@ -60,7 +60,7 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
         await this.fileHandle.readFile({ encoding: 'utf-8' })
       );
     } catch (e) {
-      throw new InvalidFileContentsError(jsonFilePath, e);
+      throw new InvalidFileContentsError(jsonFilePath, e as Error);
     }
     this.genres = parsedData.genres;
     this.records = this.postDeserialize(parsedData, this);
@@ -73,7 +73,7 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
     this.genresIndex = new Map(this.genres.map((genre) => [genre, []]));
     for (const record of this.records) {
       for (const genre of record.genres) {
-        this.genresIndex.get(genre).push(record);
+        this.genresIndex.get(genre)!.push(record);
       }
     }
   }
@@ -82,10 +82,14 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
     this.runtimesIndex = this.records.map((record) => [record.runtime, record]);
   }
 
-  async getAll(): Promise<MovieRecord[]> {
+  public async getGenres(): Promise<string[]> {
+    return this.genres;
+  }
+
+  public async getAll(): Promise<MovieRecord[]> {
     return this.records;
   }
-  async getByExact(
+  public async getByExact(
     input: GetByExactInput<MovieRecord>
   ): Promise<MovieRecord[]> {
     const results: MovieRecord[] = [];
@@ -102,19 +106,19 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
     target: MovieRecord
   ): boolean {
     for (const [key, value] of Object.entries(input)) {
-      if (target[key] !== value) {
+      if (target[key as keyof MovieRecord] !== value) {
         return false;
       }
     }
     return true;
   }
 
-  async getByRange(
+  public async getByRange(
     input: GetByRangeInput<MovieRecord>
   ): Promise<MovieRecord[]> {
     const results: MovieRecord[] = [];
     let records: MovieRecord[];
-    if ('runtime' in input) {
+    if (input['runtime']) {
       records = this.getByRangeRuntimeOptimized(input.runtime);
     } else {
       records = this.records;
@@ -146,7 +150,7 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
 
   private binsearchRuntimeIndex(n: number): number {
     let [left, right] = [0, this.runtimesIndex.length - 1];
-    let i: number;
+    let i: number = -Infinity;
     while (left <= right) {
       i = Math.floor((left + right) / 2);
       if (this.runtimesIndex[i][0] === n) {
@@ -164,20 +168,20 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
     input: GetByRangeInput<MovieRecord>,
     target: MovieRecord
   ): boolean {
-    for (const [key, [min, max]] of Object.entries(input)) {
-      if (target[key] > max || target[key] < min) {
+    for (const [key, [min, max]] of Object.entries(input).filter(([k]) => typeof target[k as keyof MovieRecord] === 'number')) {
+      if (target[key as keyof MovieRecord]! as number > max || target[key as keyof MovieRecord]! as number < min) {
         return false;
       }
     }
     return true;
   }
 
-  async getByAnyOf(
+  public async getByAnyOf(
     input: GetByAnyOfInput<MovieRecord>
   ): Promise<MovieRecord[]> {
     let resultsWithMatchCount: [MovieRecord, number][];
     if (Object.keys(input).length === 1 && Object.keys(input)[0] === 'genres') {
-      resultsWithMatchCount = this.getByAnyOfGenresOptimized(input.genres);
+      resultsWithMatchCount = this.getByAnyOfGenresOptimized(input.genres!);
     } else {
       resultsWithMatchCount = [];
       for (const record of this.records) {
@@ -193,10 +197,10 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
   /**
    * Gets movie records with any of specified genres. Should perform better than generic behavior in `getByAnyOf` in avg case.
    */
-  getByAnyOfGenresOptimized(genres: string[]): [MovieRecord, number][] {
+  private getByAnyOfGenresOptimized(genres: string[]): [MovieRecord, number][] {
     const recordMatchCountMap: Map<MovieRecord, number> = new Map();
     for (const genre of genres) {
-      this.genresIndex.get(genre).forEach((record) => {
+      this.genresIndex.get(genre)!.forEach((record) => {
         let currentMatchCount = recordMatchCountMap.get(record) ?? 0;
         recordMatchCountMap.set(record, ++currentMatchCount);
       });
@@ -209,9 +213,9 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
     target: MovieRecord
   ): number {
     let acc = 0;
-    for (const [key, values] of Object.entries(input)) {
-      for (const value of target[key]) {
-        if (values.includes(value)) {
+    for (const [key, values] of Object.entries(input).filter(([k]) => Array.isArray(target[k as keyof MovieRecord]))) {
+      for (const value of target[key as keyof MovieRecord] as Array<unknown>) {
+        if (typeof value === 'string' && values.includes(value)) {
           acc += 1;
         }
       }
@@ -219,7 +223,7 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
     return acc;
   }
 
-  async getByComposed(
+  public async getByComposed(
     input: GetByComposedInput<MovieRecord>
   ): Promise<MovieRecord[]> {
     const resultsWithMatchCount: [MovieRecord, number][] = [];

@@ -14,6 +14,6 @@ export type JSONMovieStorageOptions = Partial<{
 
 // Allowing any due to return type of JSON.parse() and params of JSON.stringify()
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type MovieRecordPreSerializeTransformer = (records: MovieRecord[], ctx?: JSONMovieStorage) => any;
+export type MovieRecordPreSerializeTransformer = (records: MovieRecord[], ctx: JSONMovieStorage) => any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type MovieRecordPostDeserializeTransformer = (data: any, ctx?: JSONMovieStorage) => MovieRecord[];
+export type MovieRecordPostDeserializeTransformer = (data: any, ctx: JSONMovieStorage) => MovieRecord[];
