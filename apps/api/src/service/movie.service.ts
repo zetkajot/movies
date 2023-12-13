@@ -3,6 +3,7 @@ import { JSONMovieStorage } from '../storage/json-movie-storage/json-movie-stora
 import { MovieRecord } from '../storage/json-movie-storage/movie-record';
 import { GetByInputVariants } from '../storage/types/inputs';
 import { UnknownGenresError } from './errors';
+import { NoMovieDtoError } from './errors/no-movie-dto.error';
 import { GetMoviesOptions } from './types/get-movies-options';
 
 export class MovieService {
@@ -38,7 +39,10 @@ export class MovieService {
     return movieDtoSchema.array().parse(results);
   }
 
-  public async saveMovie(movie: MovieDto): Promise<MovieDto> {
+  public async saveMovie(movie?: MovieDto): Promise<MovieDto> {
+    if (!movie) {
+      throw new NoMovieDtoError();
+    }
     await this.checkGenres(movie.genres);
     const newMovieRecord: MovieRecord = {
       id: this.movieStorage.getLargestId() + 1,

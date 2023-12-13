@@ -3,6 +3,7 @@ import { MovieService } from './movie.service';
 import { UnknownGenresError } from './errors';
 import { GetByInputVariants } from '../storage/types/inputs';
 import { movieRecordSchema } from '../storage/json-movie-storage/movie-record';
+import { NoMovieDtoError } from './errors/no-movie-dto.error';
 
 const dummyData = [
   {
@@ -83,6 +84,11 @@ describe('Movie Service test suite', () => {
     });
   });
   describe('saveMovie()', () => {
+    it('Should throw an error if received movie dto is undefined', async () => {
+      await expect(
+        service.saveMovie()
+      ).rejects.toThrow(NoMovieDtoError);
+    });
     it('Should throw an error if received movie dto contains unknown genre', async () => {
       (mockStorage.getGenres as jest.Mock).mockResolvedValue(['A', 'B', 'C']);
       await expect(

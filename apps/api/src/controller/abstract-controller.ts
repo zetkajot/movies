@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { SafeParseError, SafeParseSuccess } from 'zod';
+import { SafeParseError, SafeParseSuccess, ZodObjectDef } from 'zod';
 
 export abstract class AbstractController {
   constructor(
@@ -13,12 +13,12 @@ export abstract class AbstractController {
     }
   }
 
-  private registerRoute<QueryParams, Body>(
+  protected registerRoute<QueryParams, Body>(
     path: string,
     method: 'get' | 'post',
     routeHandler: (q?: QueryParams, body?: Body) => Promise<unknown>,
-    qSchema?: Zod.Schema<QueryParams>,
-    bodySchema?: Zod.Schema<Body>
+    qSchema?: Zod.Schema<QueryParams, ZodObjectDef, unknown>,
+    bodySchema?: Zod.Schema<Body, ZodObjectDef, unknown>
   ): void {
     let routePath =
       (this.root.endsWith('/') ? this.root : this.root + '/') +
@@ -28,7 +28,7 @@ export abstract class AbstractController {
       this.router.get(routePath, (req, res, next) => {
         const qParsingResult = qSchema?.safeParse(req.query);
         if (qParsingResult && !qParsingResult.success) {
-          next((qParsingResult as SafeParseError<unknown>).error);
+          return next((qParsingResult as SafeParseError<unknown>).error);
         }
 
         routeHandler((qParsingResult as SafeParseSuccess<QueryParams>)?.data)
@@ -39,11 +39,11 @@ export abstract class AbstractController {
       this.router.post(routePath, (req, res, next) => {
         const qParsingResult = qSchema?.safeParse(req.query);
         if (qParsingResult && !qParsingResult.success) {
-          next((qParsingResult as SafeParseError<unknown>).error);
+          return next((qParsingResult as SafeParseError<unknown>).error);
         }
         const bodyParsingResult = bodySchema?.safeParse(req.body);
         if (bodyParsingResult && !bodyParsingResult.success) {
-          next((bodyParsingResult as SafeParseError<unknown>).error);
+          return next((bodyParsingResult as SafeParseError<unknown>).error);
         }
 
         routeHandler(
