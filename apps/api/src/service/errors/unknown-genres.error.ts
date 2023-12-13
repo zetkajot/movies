@@ -8,7 +8,7 @@ export class UnknownGenresError extends MovieServiceError {
     public readonly allowedGenres: string[]
   ) {
     super(
-      `Received array of genres [${receivedGenres}] contains unknown genre. Allowed genres are [${allowedGenres}].`
+      `Received array of genres [${receivedGenres.map(v => `'${v}'`).join(', ')}] contains unknown genre. Allowed genres are [${allowedGenres.map(v => `'${v}'`).join(', ')}].`
     );
   }
 }

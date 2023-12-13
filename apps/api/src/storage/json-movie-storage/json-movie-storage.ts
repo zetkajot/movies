@@ -7,7 +7,7 @@ import {
   GetByRangeInput,
 } from '../types/inputs';
 import { Storage } from '../types/storage';
-import { MovieRecord } from './movie-record';
+import { MovieRecord, movieRecordSchema, rawMovieRecordSchema } from './movie-record';
 import {
   JSONMovieStorageOptions,
   MovieRecordFlushBehavior,
@@ -27,20 +27,18 @@ export class JSONMovieStorage implements Storage<MovieRecord>, OnShutdown {
   private records!: MovieRecord[];
   private genresIndex!: Map<string, MovieRecord[]>;
   private runtimesIndex!: [number, MovieRecord][];
+  private largestId!: number;
   private flushBehavior: MovieRecordFlushBehavior;
 
   public static readonly DEFAULT_PRE_SERIALIZE: MovieRecordPreSerializeTransformer =
     (records, { genres }) => ({
-      movies: records,
       genres,
+      movies: rawMovieRecordSchema.array().parse(records),
     });
   public static readonly DEFAULT_POST_DESERIALIZE: MovieRecordPostDeserializeTransformer =
     (data, ctx) => {
       ctx.genres = data.genres;
-      return data.movies.map((m: { runtime: string }) => ({
-        ...m,
-        runtime: parseInt(m.runtime),
-      }));
+      return movieRecordSchema.array().parse(data.movies);
     };
 
   private readonly preSerialize: MovieRecordPreSerializeTransformer;
@@ -105,6 +103,7 @@ export class JSONMovieStorage implements Storage<MovieRecord>, OnShutdown {
 
     this.buildGenresIndex();
     this.buildRuntimeIndex();
+    this.findLargestId();
 
     return this;
   }
@@ -123,8 +122,17 @@ export class JSONMovieStorage implements Storage<MovieRecord>, OnShutdown {
     this.runtimesIndex.sort(([l], [r]) => l - r);
   }
 
+  private findLargestId() {
+    // copy this.records using spread op to avoid mutation
+    this.largestId = [...this.records].sort(({id: l}, {id: r}) => r-l)[0].id;
+  }
+
   public async getGenres(): Promise<string[]> {
     return this.genres;
+  }
+
+  public getLargestId(): number {
+    return this.largestId;
   }
 
   public async getAll(): Promise<MovieRecord[]> {

@@ -58,7 +58,6 @@ describe('JSON Movie Storage tests', () => {
   });
   describe('load()', () => {
     it('Should acquire file handle to json file at specified path', async () => {
-      mockPostDeserialize.mockReturnValue([]);
       const path = 'some/path/to/file.json';
       await storage.load(path);
       expect(fsPromises.open).toHaveBeenCalledWith(
@@ -83,7 +82,6 @@ describe('JSON Movie Storage tests', () => {
       );
     });
     it('Should call defined post-deserialize transform function on deserialized data', async () => {
-      mockPostDeserialize.mockReturnValue([]);
       await storage.load('some/path');
 
       expect(mockPostDeserialize).toHaveBeenCalledWith(dummyData, storage);
@@ -103,7 +101,10 @@ describe('JSON Movie Storage tests', () => {
     });
     it('Should return all movie records stored', async () => {
       const returnedRecords = await storage.getAll();
-      expect(returnedRecords).toEqual(dummyData.movies);
+      expect(returnedRecords).toHaveLength(dummyData.movies.length);
+      for (const expectedMovie of dummyData.movies) {
+        expect(returnedRecords).toContainEqual(expectedMovie)
+      }
     });
   });
   describe('getByExact()', () => {
@@ -120,7 +121,10 @@ describe('JSON Movie Storage tests', () => {
       'Should only return records with values exactly matching those passed as args (case %#)',
       async (input, expectedReturnedRecords) => {
         const returnedRecords = await storage.getByExact(input);
-        expect(returnedRecords).toEqual(expectedReturnedRecords);
+        expect(returnedRecords).toHaveLength(expectedReturnedRecords.length);
+        for (const expectedRecord of expectedReturnedRecords) {
+          expect(returnedRecords).toContainEqual(expectedRecord)
+        }
       }
     );
   });
@@ -221,7 +225,10 @@ describe('JSON Movie Storage tests', () => {
         flushBehavior: MovieRecordFlushBehavior.ON_SHUTDOWN,
       });
       await storage.load('');
-      await storage.save({} as never);
+      await storage.save({
+        ...dummyData.movies[0],
+        id: 10,
+      } as never);
       expect(fhMock.write).not.toHaveBeenCalled();
       await storage.onShutdown();
       expect(fhMock.write).toHaveBeenCalled();
@@ -233,7 +240,11 @@ describe('JSON Movie Storage tests', () => {
       });
       await storage.load('');
       await storage.onShutdown();
-      expect(mockPreSerialize).toHaveBeenCalledWith(dummyData.movies,storage);
+      const passedRecords = mockPreSerialize.mock.lastCall[0]; 
+      expect(passedRecords).toHaveLength(dummyData.movies.length);
+      for (const expectedRecord of dummyData.movies) {
+        expect(passedRecords).toContainEqual(expectedRecord);
+      }
     });
     it('Should write result of pre-serialize transformer to file', async () => {
       storage = new JSONMovieStorage({
@@ -242,7 +253,8 @@ describe('JSON Movie Storage tests', () => {
       });
       await storage.load('');
       await storage.onShutdown();
-      expect(fhMock.write).toHaveBeenCalledWith(JSON.stringify(mockPreSerialize(dummyData.movies, storage)), 0, 'utf-8');
+      expect(fhMock.write).toHaveBeenCalledWith(JSON.stringify(mockPreSerialize.mock.results[0].value), 0, 'utf-8');
+
     });
   });
   describe('On shutdown', () => {

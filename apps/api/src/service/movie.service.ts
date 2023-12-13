@@ -1,3 +1,4 @@
+import { MovieDto, movieDtoSchema } from '../dto/movie.dto';
 import { JSONMovieStorage } from '../storage/json-movie-storage/json-movie-storage';
 import { MovieRecord } from '../storage/json-movie-storage/movie-record';
 import { GetByInputVariants } from '../storage/types/inputs';
@@ -9,7 +10,7 @@ export class MovieService {
   private genresCache: string[] | undefined;
   constructor(private readonly movieStorage: JSONMovieStorage) {}
 
-  public async getMovies(opts: GetMoviesOptions = {}) {
+  public async getMovies(opts: GetMoviesOptions = {}): Promise<MovieDto[]> {
     let results: MovieRecord[];
     if (
       Array.isArray(opts.genres) &&
@@ -34,7 +35,17 @@ export class MovieService {
       results = [(await this.movieStorage.getAll())[0]];
     }
 
-    return results;
+    return movieDtoSchema.array().parse(results);
+  }
+
+  public async saveMovie(movie: MovieDto): Promise<MovieDto> {
+    await this.checkGenres(movie.genres);
+    const newMovieRecord: MovieRecord = {
+      id: this.movieStorage.getLargestId() + 1,
+      ...movie,
+    }
+    await this.movieStorage.save(newMovieRecord);
+    return movieDtoSchema.parse(newMovieRecord); 
   }
 
   private async checkGenres(input: string[]): Promise<void> {
