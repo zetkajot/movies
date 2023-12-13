@@ -54,10 +54,12 @@ export class JSONMovieStorage implements Storage<MovieRecord>, OnShutdown {
       opts?.flushBehavior ?? MovieRecordFlushBehavior.ON_SHUTDOWN;
   }
   public async onShutdown(): Promise<void> {
+    console.log(`Shutting down JSONMovieStorage`);
     if (this.flushBehavior === MovieRecordFlushBehavior.ON_SHUTDOWN) {
       await this.flushData();
     }
     await this.fileHandle.close();
+    console.log(`File handle to DB file closed.`);
   }
   public async save(input: MovieRecord): Promise<void> {
     if (this.flushBehavior === MovieRecordFlushBehavior.ON_SAVE) {
@@ -80,10 +82,12 @@ export class JSONMovieStorage implements Storage<MovieRecord>, OnShutdown {
 
   private async flushData(): Promise<void> {
     const serialized = JSON.stringify(this.preSerialize(this.records, this));
+    await this.fileHandle.truncate();
     await this.fileHandle.write(serialized, 0, 'utf-8');
   }
 
   public async load(jsonFilePath: string): Promise<this> {
+    console.log(`Loading JSON movie data from ${jsonFilePath}`);
     try {
       this.fileHandle = await open(jsonFilePath, constants.O_RDWR);
     } catch (err) {
@@ -104,6 +108,8 @@ export class JSONMovieStorage implements Storage<MovieRecord>, OnShutdown {
     this.buildGenresIndex();
     this.buildRuntimeIndex();
     this.findLargestId();
+
+    console.log('JSONMovieStorage ready!');
 
     return this;
   }
