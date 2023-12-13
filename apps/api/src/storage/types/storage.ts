@@ -28,5 +28,9 @@ export interface Storage<Record> {
   /**
    * Returns records matching all of the specified conditions
    */
-  getByComposed(inptut: GetByComposedInput<Record>): Promise<Record[]>;
+  getByComposed(input: GetByComposedInput<Record>): Promise<Record[]>;
+  /**
+   * Saves new record in the storage
+   */
+  save(input: Record): Promise<void>;
 }

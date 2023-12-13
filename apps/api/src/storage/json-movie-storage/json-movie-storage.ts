@@ -10,21 +10,24 @@ import { Storage } from '../types/storage';
 import { MovieRecord } from './movie-record';
 import {
   JSONMovieStorageOptions,
+  MovieRecordFlushBehavior,
   MovieRecordPostDeserializeTransformer,
   MovieRecordPreSerializeTransformer,
 } from './types/json-movie-storage-options';
 import { UnableToOpenFileError } from './errors/unable-to-open-file.error';
 import { InvalidFileContentsError } from './errors';
 import { binsearchNext, binsearchPrevious } from './utils';
+import { OnShutdown } from '../../types/on-shutdown';
 
 /**
  * Stores Movie records in memory backed up by JSON file
  */
-export class JSONMovieStorage implements Storage<MovieRecord> {
+export class JSONMovieStorage implements Storage<MovieRecord>, OnShutdown {
   private genres!: string[];
   private records!: MovieRecord[];
   private genresIndex!: Map<string, MovieRecord[]>;
   private runtimesIndex!: [number, MovieRecord][];
+  private flushBehavior: MovieRecordFlushBehavior;
 
   public static readonly DEFAULT_PRE_SERIALIZE: MovieRecordPreSerializeTransformer =
     (records, { genres }) => ({
@@ -49,6 +52,37 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
       opts?.preSerialize ?? JSONMovieStorage.DEFAULT_PRE_SERIALIZE;
     this.postDeserialize =
       opts?.postDeserialize ?? JSONMovieStorage.DEFAULT_POST_DESERIALIZE;
+    this.flushBehavior =
+      opts?.flushBehavior ?? MovieRecordFlushBehavior.ON_SHUTDOWN;
+  }
+  public async onShutdown(): Promise<void> {
+    if (this.flushBehavior === MovieRecordFlushBehavior.ON_SHUTDOWN) {
+      await this.flushData();
+    }
+    await this.fileHandle.close();
+  }
+  public async save(input: MovieRecord): Promise<void> {
+    if (this.flushBehavior === MovieRecordFlushBehavior.ON_SAVE) {
+      await this.flushData();
+    }
+    this.records.push(input);
+    for (const genre in input.genres) {
+      this.genresIndex.get(genre)?.push(input);
+    }
+
+    const firstSmallestRuntimeIdx = binsearchPrevious(
+      this.runtimesIndex,
+      input.runtime
+    );
+    this.runtimesIndex.splice(firstSmallestRuntimeIdx + 1, 0, [
+      input.runtime,
+      input,
+    ]);
+  }
+
+  private async flushData(): Promise<void> {
+    const serialized = JSON.stringify(this.preSerialize(this.records, this));
+    await this.fileHandle.write(serialized, 0, 'utf-8');
   }
 
   public async load(jsonFilePath: string): Promise<this> {
@@ -87,7 +121,6 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
   private buildRuntimeIndex() {
     this.runtimesIndex = this.records.map((record) => [record.runtime, record]);
     this.runtimesIndex.sort(([l], [r]) => l - r);
-    console.error(this.runtimesIndex.map((r) => r[0]));
   }
 
   public async getGenres(): Promise<string[]> {
@@ -143,12 +176,12 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
     min: number,
     max: number
   ]): MovieRecord[] {
-    const left = binsearchPrevious(this.runtimesIndex, min)
-    const right =binsearchNext(this.runtimesIndex, max);
-    if (left > this.runtimesIndex.length -1 || right < 0) {
+    const left = binsearchPrevious(this.runtimesIndex, min);
+    const right = binsearchNext(this.runtimesIndex, max);
+    if (left > this.runtimesIndex.length - 1 || right < 0) {
       return [];
     }
-    return this.runtimesIndex.slice(left+1, right).map(([,m]) => m);
+    return this.runtimesIndex.slice(left + 1, right).map(([, m]) => m);
   }
 
   private matchesRange(

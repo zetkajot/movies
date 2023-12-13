@@ -3,6 +3,7 @@ import fsPromises, { FileHandle } from 'fs/promises';
 import { InvalidFileContentsError, UnableToOpenFileError } from './errors';
 import { MovieRecord } from './movie-record';
 import { GetByInputVariants } from '../types/inputs';
+import { MovieRecordFlushBehavior } from './types/json-movie-storage-options';
 
 jest.mock('fs/promises');
 
@@ -39,9 +40,17 @@ const dummyData = {
 describe('JSON Movie Storage tests', () => {
   const mockPreSerialize = jest.fn();
   const mockPostDeserialize = jest.fn();
+  const fhMock = {
+  } as unknown as FileHandle;
   let storage: JSONMovieStorage;
   beforeEach(() => {
     jest.resetAllMocks();
+    fhMock.readFile = jest.fn().mockResolvedValue(JSON.stringify(dummyData));
+    fhMock.write = jest.fn();
+    fhMock.close = jest.fn();
+    fsPromises.open = jest.fn().mockResolvedValue(fhMock);
+    mockPreSerialize.mockImplementation(JSONMovieStorage.DEFAULT_PRE_SERIALIZE);
+    mockPostDeserialize.mockImplementation(JSONMovieStorage.DEFAULT_POST_DESERIALIZE);
     storage = new JSONMovieStorage({
       preSerialize: mockPreSerialize,
       postDeserialize: mockPostDeserialize,
@@ -50,9 +59,6 @@ describe('JSON Movie Storage tests', () => {
   describe('load()', () => {
     it('Should acquire file handle to json file at specified path', async () => {
       mockPostDeserialize.mockReturnValue([]);
-      (fsPromises.open as jest.Mock).mockResolvedValue({
-        readFile: jest.fn().mockResolvedValue(JSON.stringify(dummyData)),
-      } as unknown as FileHandle);
       const path = 'some/path/to/file.json';
       await storage.load(path);
       expect(fsPromises.open).toHaveBeenCalledWith(
@@ -78,9 +84,6 @@ describe('JSON Movie Storage tests', () => {
     });
     it('Should call defined post-deserialize transform function on deserialized data', async () => {
       mockPostDeserialize.mockReturnValue([]);
-      (fsPromises.open as jest.Mock).mockResolvedValue({
-        readFile: jest.fn().mockResolvedValue(JSON.stringify(dummyData)),
-      } as unknown as FileHandle);
       await storage.load('some/path');
 
       expect(mockPostDeserialize).toHaveBeenCalledWith(dummyData, storage);
@@ -88,15 +91,6 @@ describe('JSON Movie Storage tests', () => {
   });
   describe('getGenres()', () => {
     beforeEach(async () => {
-      (fsPromises.open as jest.Mock).mockResolvedValue({
-        readFile: jest.fn().mockResolvedValue(JSON.stringify(dummyData)),
-      } as unknown as FileHandle);
-      mockPostDeserialize.mockImplementation(
-        JSONMovieStorage.DEFAULT_POST_DESERIALIZE
-      );
-      mockPreSerialize.mockImplementation(
-        JSONMovieStorage.DEFAULT_PRE_SERIALIZE
-      );
       await storage.load('');
     });
     it('Should return all genres loaded from file', async () =>{
@@ -105,15 +99,6 @@ describe('JSON Movie Storage tests', () => {
   });
   describe('getAll()', () => {
     beforeEach(async () => {
-      (fsPromises.open as jest.Mock).mockResolvedValue({
-        readFile: jest.fn().mockResolvedValue(JSON.stringify(dummyData)),
-      } as unknown as FileHandle);
-      mockPostDeserialize.mockImplementation(
-        JSONMovieStorage.DEFAULT_POST_DESERIALIZE
-      );
-      mockPreSerialize.mockImplementation(
-        JSONMovieStorage.DEFAULT_PRE_SERIALIZE
-      );
       await storage.load('');
     });
     it('Should return all movie records stored', async () => {
@@ -123,15 +108,6 @@ describe('JSON Movie Storage tests', () => {
   });
   describe('getByExact()', () => {
     beforeEach(async () => {
-      (fsPromises.open as jest.Mock).mockResolvedValue({
-        readFile: jest.fn().mockResolvedValue(JSON.stringify(dummyData)),
-      } as unknown as FileHandle);
-      mockPostDeserialize.mockImplementation(
-        JSONMovieStorage.DEFAULT_POST_DESERIALIZE
-      );
-      mockPreSerialize.mockImplementation(
-        JSONMovieStorage.DEFAULT_PRE_SERIALIZE
-      );
       await storage.load('');
     });
     it.each([
@@ -150,15 +126,6 @@ describe('JSON Movie Storage tests', () => {
   });
   describe('getByRange()', () => {
     beforeEach(async () => {
-      (fsPromises.open as jest.Mock).mockResolvedValue({
-        readFile: jest.fn().mockResolvedValue(JSON.stringify(dummyData)),
-      } as unknown as FileHandle);
-      mockPostDeserialize.mockImplementation(
-        JSONMovieStorage.DEFAULT_POST_DESERIALIZE
-      );
-      mockPreSerialize.mockImplementation(
-        JSONMovieStorage.DEFAULT_PRE_SERIALIZE
-      );
       await storage.load('');
     });
     it.each([
@@ -181,15 +148,7 @@ describe('JSON Movie Storage tests', () => {
   });
   describe('getByAnyOf()', () => {
     beforeEach(async () => {
-      (fsPromises.open as jest.Mock).mockResolvedValue({
-        readFile: jest.fn().mockResolvedValue(JSON.stringify(dummyData)),
-      } as unknown as FileHandle);
-      mockPostDeserialize.mockImplementation(
-        JSONMovieStorage.DEFAULT_POST_DESERIALIZE
-      );
-      mockPreSerialize.mockImplementation(
-        JSONMovieStorage.DEFAULT_PRE_SERIALIZE
-      );
+
       await storage.load('');
     });
     it.each([
@@ -233,15 +192,7 @@ describe('JSON Movie Storage tests', () => {
   });
   describe('getByComposed()', () => {
     beforeEach(async () => {
-      (fsPromises.open as jest.Mock).mockResolvedValue({
-        readFile: jest.fn().mockResolvedValue(JSON.stringify(dummyData)),
-      } as unknown as FileHandle);
-      mockPostDeserialize.mockImplementation(
-        JSONMovieStorage.DEFAULT_POST_DESERIALIZE
-      );
-      mockPreSerialize.mockImplementation(
-        JSONMovieStorage.DEFAULT_PRE_SERIALIZE
-      );
+
       await storage.load('');
     });
     it.each([
@@ -254,6 +205,54 @@ describe('JSON Movie Storage tests', () => {
       for (const expectedRecord of expectedReturnedRecords) {
         expect(returnedRecords).toContainEqual(expectedRecord);
       }
+    });
+  });
+  describe('Data flush', () => {
+    it('Should flush records stored in memory into the file after save() method is called if flush behavior is set to ON_SAVE', async () => {
+      storage = new JSONMovieStorage({
+        flushBehavior: MovieRecordFlushBehavior.ON_SAVE,
+      });
+      await storage.load('');
+      await storage.save({} as never);
+      expect(fhMock.write).toHaveBeenCalled();
+    });
+    it('Should flush records stored in memory into the file after onShutdown() method is called if flush behavior is set to ON_SHUTDOWN', async () => {
+      storage = new JSONMovieStorage({
+        flushBehavior: MovieRecordFlushBehavior.ON_SHUTDOWN,
+      });
+      await storage.load('');
+      await storage.save({} as never);
+      expect(fhMock.write).not.toHaveBeenCalled();
+      await storage.onShutdown();
+      expect(fhMock.write).toHaveBeenCalled();
+    });
+    it('Should call pre-serialize transformer with record data stored in memory', async () => {
+      storage = new JSONMovieStorage({
+        flushBehavior: MovieRecordFlushBehavior.ON_SHUTDOWN,
+        preSerialize: mockPreSerialize,
+      });
+      await storage.load('');
+      await storage.onShutdown();
+      expect(mockPreSerialize).toHaveBeenCalledWith(dummyData.movies,storage);
+    });
+    it('Should write result of pre-serialize transformer to file', async () => {
+      storage = new JSONMovieStorage({
+        flushBehavior: MovieRecordFlushBehavior.ON_SHUTDOWN,
+        preSerialize: mockPreSerialize,
+      });
+      await storage.load('');
+      await storage.onShutdown();
+      expect(fhMock.write).toHaveBeenCalledWith(JSON.stringify(mockPreSerialize(dummyData.movies, storage)), 0, 'utf-8');
+    });
+  });
+  describe('On shutdown', () => {
+    it('Should close used file handle', async () => {
+      storage = new JSONMovieStorage();
+      await storage.load('');
+      
+      await storage.onShutdown();
+      
+      expect(fhMock.close).toHaveBeenCalled();
     });
   });
 });
