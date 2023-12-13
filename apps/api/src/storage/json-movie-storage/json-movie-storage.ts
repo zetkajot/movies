@@ -15,6 +15,7 @@ import {
 } from './types/json-movie-storage-options';
 import { UnableToOpenFileError } from './errors/unable-to-open-file.error';
 import { InvalidFileContentsError } from './errors';
+import { binsearchNext, binsearchPrevious } from './utils';
 
 /**
  * Stores Movie records in memory backed up by JSON file
@@ -33,7 +34,10 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
   public static readonly DEFAULT_POST_DESERIALIZE: MovieRecordPostDeserializeTransformer =
     (data, ctx) => {
       ctx.genres = data.genres;
-      return data.movies;
+      return data.movies.map((m: { runtime: string }) => ({
+        ...m,
+        runtime: parseInt(m.runtime),
+      }));
     };
 
   private readonly preSerialize: MovieRecordPreSerializeTransformer;
@@ -47,7 +51,7 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
       opts?.postDeserialize ?? JSONMovieStorage.DEFAULT_POST_DESERIALIZE;
   }
 
-  public async load(jsonFilePath: string) {
+  public async load(jsonFilePath: string): Promise<this> {
     try {
       this.fileHandle = await open(jsonFilePath, constants.O_RDWR);
     } catch (err) {
@@ -67,6 +71,8 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
 
     this.buildGenresIndex();
     this.buildRuntimeIndex();
+
+    return this;
   }
 
   private buildGenresIndex() {
@@ -80,6 +86,8 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
 
   private buildRuntimeIndex() {
     this.runtimesIndex = this.records.map((record) => [record.runtime, record]);
+    this.runtimesIndex.sort(([l], [r]) => l - r);
+    console.error(this.runtimesIndex.map((r) => r[0]));
   }
 
   public async getGenres(): Promise<string[]> {
@@ -135,41 +143,25 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
     min: number,
     max: number
   ]): MovieRecord[] {
-    let left = this.binsearchRuntimeIndex(min);
-    if (this.runtimesIndex[left][0] < min) {
-      left += 1;
+    const left = binsearchPrevious(this.runtimesIndex, min)
+    const right =binsearchNext(this.runtimesIndex, max);
+    if (left > this.runtimesIndex.length -1 || right < 0) {
+      return [];
     }
-    let right = this.binsearchRuntimeIndex(max);
-    if (this.runtimesIndex[right][0] > max) {
-      right -= 1;
-    }
-    return this.runtimesIndex
-      .slice(left, right + 1)
-      .map(([, record]) => record);
-  }
-
-  private binsearchRuntimeIndex(n: number): number {
-    let [left, right] = [0, this.runtimesIndex.length - 1];
-    let i: number = -Infinity;
-    while (left <= right) {
-      i = Math.floor((left + right) / 2);
-      if (this.runtimesIndex[i][0] === n) {
-        return i;
-      } else if (this.runtimesIndex[i][0] < n) {
-        left = i + 1;
-      } else {
-        right = i - 1;
-      }
-    }
-    return i;
+    return this.runtimesIndex.slice(left+1, right).map(([,m]) => m);
   }
 
   private matchesRange(
     input: GetByRangeInput<MovieRecord>,
     target: MovieRecord
   ): boolean {
-    for (const [key, [min, max]] of Object.entries(input).filter(([k]) => typeof target[k as keyof MovieRecord] === 'number')) {
-      if (target[key as keyof MovieRecord]! as number > max || target[key as keyof MovieRecord]! as number < min) {
+    for (const [key, [min, max]] of Object.entries(input).filter(
+      ([k]) => typeof target[k as keyof MovieRecord] === 'number'
+    )) {
+      if (
+        (target[key as keyof MovieRecord]! as number) > max ||
+        (target[key as keyof MovieRecord]! as number) < min
+      ) {
         return false;
       }
     }
@@ -213,7 +205,9 @@ export class JSONMovieStorage implements Storage<MovieRecord> {
     target: MovieRecord
   ): number {
     let acc = 0;
-    for (const [key, values] of Object.entries(input).filter(([k]) => Array.isArray(target[k as keyof MovieRecord]))) {
+    for (const [key, values] of Object.entries(input).filter(([k]) =>
+      Array.isArray(target[k as keyof MovieRecord])
+    )) {
       for (const value of target[key as keyof MovieRecord] as Array<unknown>) {
         if (typeof value === 'string' && values.includes(value)) {
           acc += 1;
